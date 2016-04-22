@@ -1,20 +1,40 @@
 #!/usr/bin/env python3
 import subprocess
 import time
+import argparse
+from Xlib import display # python3-xlib
+from gi.repository import Gio
 
 def get_cursor_size():
     ret = subprocess.check_output(["gsettings", "get", "org.gnome.desktop.interface", "cursor-size"]).decode("utf-8")
+    
     return int(ret)
 
 def set_cursor_size(cursor_size):
-    ret = subprocess.check_output(["gsettings", "set", "org.gnome.desktop.interface", "cursor-size", str(cursor_size)])
+    global current_cursor_size
+    
+    current_cursor_size = cursor_size
+    #subprocess.Popen(["gsettings", "set", "org.gnome.desktop.interface", "cursor-size", str(cursor_size)])
+    setting = Gio.Settings.new("org.gnome.desktop.interface");
+
+    setting.set_int('cursor-size',  cursor_size)
 
 def get_mouse_position():
-    curr = subprocess.check_output(["xdotool", "getmouselocation"]).decode("utf-8")
-    return [int(it.split(":")[1]) for it in curr.split()[:2]]
+    qp = display.Display().screen().root.query_pointer()
+    return [qp.root_x, qp.root_y]
 
+parser = argparse.ArgumentParser(description='Magnify mouse cursor if mouse is shaken.')
+parser.add_argument('--debug', help='Pring debug data during program execution', action="store_true")
+args = parser.parse_args()
+
+is_debug_on = 0
+
+if args.debug:
+    is_debug_on = 1
+    
 original_cursor_size = get_cursor_size()
-max_cursor_size = original_cursor_size * 3
+max_cursor_size = 48
+current_cursor_size = original_cursor_size
 
 previous_pos = get_mouse_position()
 
@@ -22,17 +42,13 @@ xDeltas = []
 yDeltas = []
 
 while True:
-    time.sleep(0.001)
+    time.sleep(0.01)
     pos = get_mouse_position()
 
-    if len(xDeltas) > 6:
+    if len(xDeltas) > 10:
         xDeltas.pop()
 
-    if len(yDeltas) > 6:
-        yDeltas.pop()
-
     xDeltas.insert(0, previous_pos[0] - pos[0])
-    yDeltas.insert(0, previous_pos[1] - pos[1])
 
     xSignChangedCount = 0
 
@@ -41,12 +57,15 @@ while True:
     for val in xDeltas:
         if val * prev < 0:
             xSignChangedCount = xSignChangedCount + 1
-        
-    #print(str(xSignChangedCount))
 
-    if xSignChangedCount > 1 and get_cursor_size() < max_cursor_size:
-        set_cursor_size(get_cursor_size() + 6)
-    elif xSignChangedCount < 2 and get_cursor_size() > original_cursor_size:
-        set_cursor_size(get_cursor_size() - 6)
+        prev = val
+
+    if is_debug_on:    
+        print(str(xSignChangedCount) + ":" + str(current_cursor_size))
+
+    if xSignChangedCount > 1 and current_cursor_size < max_cursor_size:
+        set_cursor_size(min(current_cursor_size + 8, max_cursor_size))
+    elif xSignChangedCount <= 1 and current_cursor_size > original_cursor_size:
+        set_cursor_size(max(current_cursor_size - 8, original_cursor_size))
 
     previous_pos = pos
